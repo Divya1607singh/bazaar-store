@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bazaar – Online Store</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <div class="logo">Baza<b>ar</b></div>
+  <div class="search"><input id="q" type="search" placeholder="Search products" aria-label="Search products"></div>
+  <button class="ib" id="ubtn">Log in</button>
+  <button class="ib" id="theme" aria-label="Toggle dark mode">🌙</button>
+  <button class="ib" id="wbtn" aria-label="Wishlist">♥<span class="badge" id="wc">0</span></button>
+  <button class="ib" id="cbtn" aria-label="Open cart">🛒<span class="badge" id="cc">0</span></button>
+</header>
+
+<section class="hero">
+  <h1>Everyday things, delivered fast.</h1>
+  <p>Free delivery above ₹999. Use code <b>SAVE10</b> for 10% off.</p>
+  <div class="deal" data-v="2"><span>⚡ Deal of the day: Smart Watch, 50% off</span><b id="cd"></b></div>
+</section>
+
+<div class="bar" id="cats"></div>
+<main class="grid" id="grid"></main>
+
+<div class="shade" id="shade"></div>
+<aside id="cart" aria-label="Cart">
+  <div class="hd"><span id="ctitle">Your cart</span><button class="ib" id="close" aria-label="Close">✕</button></div>
+  <div class="items" id="items"></div>
+  <div class="ft" id="ft">
+    <div class="coupon"><input id="code" placeholder="Coupon code"><button id="apply">Apply</button></div>
+    <div class="line"><span>Subtotal</span><span id="sub"></span></div>
+    <div class="line"><span>Discount</span><span id="disc"></span></div>
+    <div class="line"><span>Delivery</span><span id="ship"></span></div>
+    <div class="line tot"><span>Total</span><span id="tot"></span></div>
+    <button class="add" id="co">Checkout</button>
+  </div>
+  <form class="ft hide" id="form" onsubmit="return false">
+    <input id="nm" placeholder="Full name" required>
+    <input id="ad" placeholder="Delivery address" required>
+    <input id="ph" placeholder="Phone number" inputmode="numeric" pattern="[0-9]{10}" required>
+    <button class="add" id="place">Place order</button>
+    <button type="button" class="ib" id="back">Back to cart</button>
+  </form>
+</aside>
+<footer><b>Bazaar</b><div>Get deals in your inbox</div><form id="nl"><input type="email" placeholder="Your email" required aria-label="Email"><button class="add" style="margin:0;padding:9px 16px">Subscribe</button></form></footer>
+<div class="modal" id="modal"><div class="box" id="box"></div></div>
+<div class="toast" id="toast" role="status"></div>
+
+<script src="data.js"></script>
+<script src="script.js"></script>
+</body>
+</html>

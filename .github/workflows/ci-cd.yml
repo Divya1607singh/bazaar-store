@@ -1,0 +1,88 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  # 1) Check code, build, and smoke-test the Docker image (runs on every push and PR)
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Check JS syntax and file references
+        run: npm run check
+      - name: Build
+        run: npm run build
+      - name: Build Docker image and smoke test
+        run: |
+          docker build -t bazaar:test .
+          docker run -d --name smoke -p 8080:80 bazaar:test
+          for i in $(seq 1 10); do curl -fsS http://localhost:8080/healthz && break; sleep 1; done
+          curl -fsS http://localhost:8080/ | grep -q "Bazaar"
+          curl -fsS http://localhost:8080/dashboard.html > /dev/null
+          docker rm -f smoke
+
+  # 2) Push the image to GitHub Container Registry (only on main)
+  docker:
+    needs: ci
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.meta.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Image name (must be lowercase)
+        id: meta
+        run: echo "image=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          build-args: GIT_SHA=${{ github.sha }}
+          tags: |
+            ${{ steps.meta.outputs.image }}:${{ github.sha }}
+            ${{ steps.meta.outputs.image }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # 3) Deploy to EC2 over SSH (only on main)
+  deploy:
+    needs: docker
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy over SSH
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER }}
+          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+          IMAGE: ${{ needs.docker.outputs.image }}:${{ github.sha }}
+          GH_USER: ${{ github.actor }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$EC2_SSH_KEY" > ~/.ssh/key && chmod 600 ~/.ssh/key
+          ssh-keyscan -H "$EC2_HOST" >> ~/.ssh/known_hosts
+          {
+            echo "export IMAGE='$IMAGE' GH_USER='$GH_USER' GH_TOKEN='$GH_TOKEN'"
+            cat deploy/remote-deploy.sh
+          } | ssh -i ~/.ssh/key "$EC2_USER@$EC2_HOST" 'bash -s'

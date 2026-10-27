@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bazaar – Admin Dashboard</title>
+<link rel="stylesheet" href="style.css">
+<style>
+.app{display:grid;grid-template-columns:220px 1fr;min-height:100vh}
+.side{background:var(--card);border-right:1px solid var(--line);padding:20px 14px;display:flex;flex-direction:column;gap:6px}
+.side .logo{padding:0 8px 16px}
+.nv{text-align:left;background:none;border:0;padding:10px 12px;border-radius:8px;text-decoration:none;color:inherit}
+.nv[aria-current=true]{background:var(--btn);color:var(--btn-ink);font-weight:600}
+.sp{flex:1}
+.main{padding:24px;width:100%;max-width:1100px}
+.top{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:18px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;margin-bottom:14px}
+.kpi,.panel{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:14px}
+.kpis .kpi{margin:0}
+.kpi small{color:var(--mut)}
+.kpi b{display:block;font-size:1.6rem;letter-spacing:-.5px}
+.two{display:grid;grid-template-columns:2fr 1fr;gap:14px}
+.panel h3{margin-bottom:10px}
+.tw{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:.92rem}
+th,td{text-align:left;padding:9px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+th{color:var(--mut);font-weight:500}
+select,.num{padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:var(--bg)}
+.num{width:76px}
+.tag{padding:2px 8px;border-radius:99px;font-size:.8rem;border:1px solid var(--line)}
+.low{color:#c0392b;border-color:#c0392b}
+.v{display:none}.v.on{display:block}
+.gate{max-width:420px;margin:15vh auto;text-align:center;padding:20px}
+.gate a{display:inline-block;margin-top:14px;text-decoration:none}
+.tp{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--line)}
+@media(max-width:800px){.app{grid-template-columns:1fr}.side{flex-direction:row;overflow-x:auto;border-right:0;border-bottom:1px solid var(--line)}.side .logo,.sp{display:none}.two{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="gate hide" id="gate">
+  <h2>Admin access only</h2>
+  <p class="mut" id="gmsg"></p>
+  <a class="add" href="index.html">Go to store</a>
+</div>
+
+<div class="app hide" id="app">
+  <nav class="side" aria-label="Dashboard">
+    <div class="logo">Baza<b>ar</b></div>
+    <button class="nv" data-t="overview" aria-current="true">📊 Overview</button>
+    <button class="nv" data-t="orders">📦 Orders</button>
+    <button class="nv" data-t="products">🏷️ Inventory</button>
+    <button class="nv" data-t="customers">👥 Customers</button>
+    <div class="sp"></div>
+    <a class="nv" href="index.html">← Back to store</a>
+  </nav>
+  <div class="main">
+    <div class="top">
+      <h1 id="ttl">Overview</h1>
+      <label><input type="checkbox" id="demo" checked> Show demo data</label>
+    </div>
+
+    <section class="v on" id="v-overview">
+      <div class="kpis" id="kpis"></div>
+      <div class="two">
+        <div class="panel"><h3>Revenue, last 7 days</h3><div id="chart"></div></div>
+        <div class="panel"><h3>Top products</h3><div id="top"></div></div>
+      </div>
+      <div class="panel"><h3>Recent orders</h3><div class="tw" id="recent"></div></div>
+    </section>
+
+    <section class="v" id="v-orders">
+      <div class="panel"><div class="top"><h3>All orders</h3><button class="chip" id="csv">⬇ Export CSV</button></div><div class="tw" id="orders"></div></div>
+    </section>
+
+    <section class="v" id="v-products">
+      <div class="panel"><h3>Inventory</h3><div class="tw" id="inv"></div></div>
+    </section>
+
+    <section class="v" id="v-customers">
+      <div class="panel"><h3>Customers</h3><div class="tw" id="cust"></div></div>
+    </section>
+  </div>
+</div>
+<div class="toast" id="toast" role="status"></div>
+
+<script src="data.js"></script>
+<script>
+const $=id=>document.getElementById(id);
+const rs=n=>"₹"+Math.round(n).toLocaleString("en-IN");
+const load=(k,d)=>{try{return JSON.parse(localStorage.getItem(k))??d}catch(e){return d}};
+const save=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}};
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const th=load("theme",null);if(th)document.documentElement.dataset.theme=th;
+
+const users=load("users",[]), me=load("session",null);
+let real=load("orders",[]), stock=load("stock",{});
+const STATUS=["Placed","Shipped","Delivered","Cancelled"];
+const DAY=864e5;
+
+// Admin = the first account created on the store. Demo only: use real role-based auth on a backend.
+if(!me||!users.length||users[0].email!==me.email){
+  $("gate").classList.remove("hide");
+  $("gmsg").textContent=me?"This account is not an admin. Log in with the first account created on the store.":"Please log in to the store with the admin account first.";
+}else{
+  $("app").classList.remove("hide");
+  init();
+}
+
+function init(){
+  const T=o=>o.ts||(()=>{const[d,m,y]=(o.date||"1/1/1970").split("/");return new Date(y,m-1,d).getTime()})();
+  let x=7;const r=()=>(x=(x*16807)%2147483647)/2147483647;
+  const names=["Aarav","Diya","Kabir","Meera","Rohan","Isha"];
+  const DEMO=Array.from({length:28},(_,i)=>{const p=PRODUCTS[Math.floor(r()*PRODUCTS.length)],q=1+Math.floor(r()*2);
+    return{id:"DM"+(1000+i),demo:1,name:names[i%6],user:"demo"+(i%6)+"@bazaar.in",ts:Date.now()-Math.floor(r()*7*DAY),total:p.price*q,items:[p.name+" × "+q],status:STATUS[Math.floor(r()*4)]}});
+  const all=()=>[...real,...($("demo").checked?DEMO:[])].sort((a,b)=>T(b)-T(a));
+  const table=(h,rows)=>rows.length?`<table><thead><tr>${h.map(c=>`<th>${c}</th>`).join("")}</tr></thead><tbody>${rows.join("")}</tbody></table>`:'<p class="mut">Nothing here yet.</p>';
+  const orderRow=o=>`<tr><td><b>${esc(o.id)}</b></td><td>${esc(o.name||o.user)}</td><td>${new Date(T(o)).toLocaleDateString("en-IN")}</td><td>${o.items.map(esc).join(", ")}</td><td>${rs(o.total)}</td>
+    <td><select data-o="${esc(o.id)}" ${o.demo?"disabled title='Demo order'":""}>${STATUS.map(s=>`<option ${s===(o.status||"Placed")?"selected":""}>${s}</option>`).join("")}</select></td></tr>`;
+  const OH=["Order","Customer","Date","Items","Total","Status"];
+
+  function render(){
+    const O=all(),live=O.filter(o=>o.status!=="Cancelled");
+    const rev=live.reduce((a,o)=>a+o.total,0);
+    const cm=new Map();users.forEach(u=>cm.set(u.email,{name:u.name,n:0,s:0}));
+    live.forEach(o=>{const c=cm.get(o.user)||{name:o.name||o.user,n:0,s:0};c.n++;c.s+=o.total;cm.set(o.user,c)});
+    $("kpis").innerHTML=[["Revenue",rs(rev)],["Orders",O.length],["Customers",cm.size],["Avg. order value",rs(live.length?rev/live.length:0)]]
+      .map(k=>`<div class="kpi"><small>${k[0]}</small><b>${k[1]}</b></div>`).join("");
+
+    const t0=new Date().setHours(0,0,0,0),days=Array(7).fill(0);
+    live.forEach(o=>{const i=Math.floor((t0-new Date(T(o)).setHours(0,0,0,0))/DAY);if(i>=0&&i<7)days[6-i]+=o.total});
+    const mx=Math.max(...days,1);
+    $("chart").innerHTML=`<svg viewBox="0 0 420 170" width="100%" role="img" aria-label="Revenue per day">`+days.map((v,i)=>{
+      const h=v/mx*120,lbl=new Date(t0-(6-i)*DAY).toLocaleDateString("en-IN",{weekday:"short"});
+      return`<rect x="${i*60+10}" y="${135-h}" width="40" height="${h}" rx="5" fill="var(--acc)"><title>${rs(v)}</title></rect>
+      <text x="${i*60+30}" y="155" text-anchor="middle" font-size="12" fill="var(--mut)">${lbl}</text>
+      <text x="${i*60+30}" y="${128-h}" text-anchor="middle" font-size="11" fill="currentColor">${v?rs(v):""}</text>`}).join("")+`</svg>`;
+
+    const tp={};live.forEach(o=>o.items.forEach(s=>{const m=/^(.*) × (\d+)$/.exec(s);if(m)tp[m[1]]=(tp[m[1]]||0)+ +m[2]}));
+    const top=Object.entries(tp).sort((a,b)=>b[1]-a[1]).slice(0,5);
+    $("top").innerHTML=top.length?top.map(t=>`<div class="tp"><span>${esc(t[0])}</span><b>${t[1]} sold</b></div>`).join(""):'<p class="mut">No sales yet.</p>';
+
+    $("recent").innerHTML=table(OH,O.slice(0,5).map(orderRow));
+    $("orders").innerHTML=table(OH,O.map(orderRow));
+    $("inv").innerHTML=table(["Product","Category","Price","Stock","Status"],PRODUCTS.map(p=>{const s=stock[p.id]??50;
+      return`<tr><td>${p.em} ${p.name}</td><td>${p.cat}</td><td>${rs(p.price)}</td><td><input class="num" type="number" min="0" data-s="${p.id}" value="${s}" aria-label="Stock for ${p.name}"></td><td><span class="tag ${s<10?"low":""}">${s<10?"Low stock":"In stock"}</span></td></tr>`}));
+    $("cust").innerHTML=table(["Name","Email","Orders","Spent"],[...cm].map(([e,c])=>`<tr><td>${esc(c.name)}</td><td>${esc(e)}</td><td>${c.n}</td><td>${rs(c.s)}</td></tr>`));
+  }
+
+  document.addEventListener("change",e=>{
+    const t=e.target;
+    if(t.dataset.o){const o=real.find(x=>x.id===t.dataset.o);if(o){o.status=t.value;save("orders",real);render();toast("Status updated")}}
+    if(t.dataset.s){stock[t.dataset.s]=Math.max(0,+t.value||0);save("stock",stock);render();toast("Stock saved")}
+  });
+  $("demo").onchange=render;
+  document.querySelectorAll(".nv[data-t]").forEach(b=>b.onclick=()=>{
+    document.querySelectorAll(".nv[data-t]").forEach(x=>x.removeAttribute("aria-current"));b.setAttribute("aria-current","true");
+    document.querySelectorAll(".v").forEach(v=>v.classList.toggle("on",v.id==="v-"+b.dataset.t));
+    $("ttl").textContent=b.textContent.replace(/^\S+\s/,"");
+  });
+  $("csv").onclick=()=>{
+    const q=v=>'"'+String(v).replace(/"/g,'""')+'"';
+    const rows=[["Order","Customer","Date","Items","Total","Status"],...all().map(o=>[o.id,o.name||o.user,new Date(T(o)).toLocaleDateString("en-IN"),o.items.join("; "),o.total,o.status||"Placed"])];
+    const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([rows.map(r=>r.map(q).join(",")).join("\n")],{type:"text/csv"}));a.download="orders.csv";a.click();
+  };
+  render();
+}
+function toast(m){const t=$("toast");t.textContent=m;t.classList.add("on");clearTimeout(toast.t);toast.t=setTimeout(()=>t.classList.remove("on"),1600)}
+</script>
+</body>
+</html>
